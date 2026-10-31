@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1769e0">
+<title>محرر النصوص العربي</title>
+<style>
+:root{--blue:#1769e0;--blue-dark:#1253b4;--bg:#f1f5fb;--ink:#172033;--muted:#66758b;--line:#d8e1ed}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Tahoma,Arial,sans-serif}
+header{background:var(--blue);color:white;padding:22px 16px 20px;text-align:center}
+header h1{font-size:clamp(24px,6vw,32px);margin:0 0 8px}
+header p{margin:0;color:#e7efff;font-size:16px}
+main{max-width:850px;margin:auto;padding:16px;display:grid;gap:14px}
+.panel{background:white;border:1px solid var(--line);border-radius:20px;padding:16px;box-shadow:0 3px 14px #17203308}
+label.field-label{display:block;font-weight:700;margin:0 0 8px}
+input[type=text]{width:100%;min-width:0;border:1px solid var(--line);border-radius:12px;padding:13px 14px;font:inherit;font-size:17px;background:#fff;color:var(--ink)}
+.toolbar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:12px}
+button,.file-button{border:1px solid var(--line);border-radius:13px;padding:12px 10px;font:inherit;font-weight:650;font-size:15px;background:#e7efff;color:#174b96;cursor:pointer;min-height:48px;text-align:center}
+button:active,.file-button:active{transform:scale(.985)}
+button.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+button.primary:active{background:var(--blue-dark)}
+button:focus-visible,input:focus-visible,#editor:focus-visible{outline:3px solid #80b2ff;outline-offset:2px}
+#editor{width:100%;min-height:42vh;max-height:65vh;overflow:auto;resize:vertical;background:#fff;border:2px solid var(--line);border-radius:16px;padding:18px;font-size:20px;line-height:1.9;outline:none;overflow-wrap:anywhere}
+#editor:empty:before{content:attr(data-placeholder);color:#9aa6b6;pointer-events:none}
+.stats{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:14px;margin-top:9px}
+.status{border-radius:12px;background:#f5f8fd;padding:12px;color:#44536a;font-size:14px;line-height:1.7;overflow-wrap:anywhere}
+.small-note{font-size:13px;color:var(--muted);line-height:1.7;margin:10px 2px 0}
+.hidden{display:none}
+@media(min-width:600px){.toolbar{grid-template-columns:repeat(4,minmax(0,1fr))}main{padding:22px}.panel{padding:20px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>محرر النصوص العربي</h1>
+  <p>اكتب نصك، احفظه، أو نزّله كملف TXT</p>
+</header>
+<main>
+  <section class="panel">
+    <label class="field-label" for="filename">اسم الملف</label>
+    <input id="filename" type="text" value="مستندي" autocomplete="off" aria-label="اسم الملف">
+    <div class="toolbar">
+      <button class="primary" id="downloadBtn" type="button">تنزيل ملف TXT</button>
+      <button class="primary" id="saveBtn" type="button">حفظ داخل المحرر</button>
+      <button id="openBtn" type="button">فتح ملف TXT</button>
+      <button id="newBtn" type="button">مستند جديد</button>
+      <button id="boldBtn" type="button" aria-label="عريض">عريض B</button>
+      <button id="italicBtn" type="button" aria-label="مائل">مائل I</button>
+      <button id="underlineBtn" type="button">تحته خط</button>
+      <button id="clearFormatBtn" type="button">إلغاء التنسيق</button>
+      <button id="increaseBtn" type="button">تكبير الخط +</button>
+      <button id="decreaseBtn" type="button">تصغير الخط −</button>
+    </div>
+    <input class="hidden" id="fileInput" type="file" accept=".txt,text/plain">
+    <p class="small-note">التنسيق يعمل على النص الذي تحدده. التنزيل ينشئ ملفًا نصيًا مستقلًا في مجلد التنزيلات.</p>
+  </section>
+
+  <section class="panel">
+    <label class="field-label" for="editor">النص</label>
+    <div id="editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="اكتب نصك هنا..." spellcheck="true"></div>
+    <div class="stats"><span id="wordCount">كلمة 0</span><span id="charCount">0 حرف</span><span id="fontSizeLabel">حجم الخط: 20</span></div>
+  </section>
+  <section class="panel">
+    <strong>حالة المحرر</strong>
+    <div class="status" id="status" role="status" aria-live="polite">جاهز للكتابة. اكتب نصًا ثم جرّب الحفظ أو التنزيل.</div>
+  </section>
+</main>
+<script>
+(function(){
+  const editor = document.getElementById('editor');
+  const filename = document.getElementById('filename');
+  const status = document.getElementById('status');
+  const wordCount = document.getElementById('wordCount');
+  const charCount = document.getElementById('charCount');
+  const fontSizeLabel = document.getElementById('fontSizeLabel');
+  const fileInput = document.getElementById('fileInput');
+  const STORAGE_KEY = 'arabicTextEditorDocument_v3';
+  let fontSize = 20;
+
+  function message(text){ status.textContent = text; }
+  function plainText(){ return (editor.innerText || editor.textContent || '').replace(/\u00a0/g,' ').replace(/\r/g,''); }
+  function updateCounts(){
+    const text = plainText();
+    const trimmed = text.trim();
+    const words = trimmed ? trimmed.split(/\s+/u).length : 0;
+    wordCount.textContent = 'كلمة ' + words;
+    charCount.textContent = text.length + ' حرف';
+    fontSizeLabel.textContent = 'حجم الخط: ' + fontSize;
+  }
+  function safeName(){
+    let name = (filename.value || '').trim().replace(/[\\/:*?"<>|]/g,'_');
+    if(!name) name = 'مستندي';
+    return name.replace(/\.txt$/i,'');
+  }
+  function saveDocument(showMessage=true){
+    try{
+      const data = {text:editor.innerHTML, name:filename.value, fontSize:fontSize, savedAt:new Date().toISOString()};
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      if(showMessage) message('تم الحفظ داخل هذا المتصفح على هذا الجهاز.');
+      return true;
+    }catch(e){
+      message('تعذر الحفظ داخل المتصفح. استخدم «تنزيل ملف TXT» للاحتفاظ بنسخة.');
+      return false;
+    }
+  }
+  function downloadText(){
+    const text = plainText();
+    if(!text.trim()){
+      message('لم يتم التنزيل لأن مربع النص فارغ. اكتب جملة أولًا ثم اضغط تنزيل.');
+      editor.focus();
+      return;
+    }
+    try{
+      const blob = new Blob(['\ufeff', text], {type:'text/plain;charset=utf-8'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = safeName() + '.txt';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 1500);
+      message('تم طلب تنزيل «' + safeName() + '.txt» ويحتوي على ' + text.length + ' حرف. افتح إشعار التنزيل أو مجلد التنزيلات للتحقق.');
+    }catch(e){
+      message('تعذر إنشاء التنزيل في هذا المتصفح. جرّب فتح الصفحة في Chrome ثم اضغط تنزيل.');
+    }
+  }
+  function restoreDocument(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return;
+      const data = JSON.parse(raw);
+      if(data && typeof data.text === 'string') editor.innerHTML = data.text;
+      if(data && typeof data.name === 'string') filename.value = data.name;
+      if(data && Number.isFinite(data.fontSize)) fontSize = Math.min(40,Math.max(12,data.fontSize));
+      editor.style.fontSize = fontSize + 'px';
+      updateCounts();
+      message('تم استرجاع آخر نسخة محفوظة على هذا الجهاز.');
+    }catch(e){ message('يمكنك البدء بالكتابة الآن.'); }
+  }
+  function runFormat(command){
+    editor.focus();
+    try{ document.execCommand(command, false, null); updateCounts(); }
+    catch(e){ message('لم يعمل التنسيق في هذا المتصفح. حدّد النص ثم حاول مرة أخرى.'); }
+  }
+  document.getElementById('saveBtn').addEventListener('click',()=>saveDocument(true));
+  document.getElementById('downloadBtn').addEventListener('click',downloadText);
+  document.getElementById('openBtn').addEventListener('click',()=>{fileInput.value='';fileInput.click();});
+  fileInput.addEventListener('change',function(){
+    const file = this.files && this.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(){
+      editor.textContent = String(reader.result || '').replace(/^\ufeff/,'');
+      filename.value = file.name.replace(/\.txt$/i,'') || 'مستندي';
+      updateCounts();
+      message('تم فتح الملف «' + file.name + '». اضغط حفظ أو تنزيل للاحتفاظ بالتغييرات.');
+    };
+    reader.onerror = ()=>message('تعذر فتح الملف. جرّب اختيار ملف TXT آخر.');
+    reader.readAsText(file,'UTF-8');
+  });
+  document.getElementById('newBtn').addEventListener('click',()=>{
+    if(plainText().trim() && !confirm('هل تريد بدء مستند جديد؟ نزّل أو احفظ النص الحالي أولًا إذا كنت تحتاجه.')) return;
+    editor.innerHTML=''; filename.value='مستندي'; updateCounts(); message('تم إنشاء مستند جديد.'); editor.focus();
+  });
+  document.getElementById('boldBtn').addEventListener('click',()=>runFormat('bold'));
+  document.getElementById('italicBtn').addEventListener('click',()=>runFormat('italic'));
+  document.getElementById('underlineBtn').addEventListener('click',()=>runFormat('underline'));
+  document.getElementById('clearFormatBtn').addEventListener('click',()=>runFormat('removeFormat'));
+  document.getElementById('increaseBtn').addEventListener('click',()=>{fontSize=Math.min(40,fontSize+2);editor.style.fontSize=fontSize+'px';updateCounts();editor.focus();});
+  document.getElementById('decreaseBtn').addEventListener('click',()=>{fontSize=Math.max(12,fontSize-2);editor.style.fontSize=fontSize+'px';updateCounts();editor.focus();});
+  editor.addEventListener('input',()=>{updateCounts();});
+  filename.addEventListener('input',()=>{});
+  window.addEventListener('beforeunload',()=>{try{localStorage.setItem(STORAGE_KEY,JSON.stringify({text:editor.innerHTML,name:filename.value,fontSize:fontSize,savedAt:new Date().toISOString()}));}catch(e){}});
+  restoreDocument();
+  updateCounts();
+})();
+</script>
+</body>
+</html>
